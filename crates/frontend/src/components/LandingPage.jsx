@@ -59,13 +59,19 @@ export default function LandingPage() {
         }
     };
 
-    const handleJoinSubmit = async ({ name, email }) => {
+    const handleJoinSubmit = async ({ name, email, role }) => {
         setIsLoading(true);
         setStatus('');
 
         try {
             // Use browser location if available, otherwise just 'Unknown'
             const locationToSend = browserLocation || 'Unknown';
+
+            // Save role + name in localStorage so WaitlistSuccess can read them
+            // after the magic link redirect (Supabase doesn't always update
+            // existing user metadata on repeat OTP sign-ins)
+            if (role) localStorage.setItem('latents_pending_role', role);
+            if (name) localStorage.setItem('latents_pending_name', name);
 
             // Send Magic Link via Supabase Auth
             const { error } = await supabase.auth.signInWithOtp({
@@ -75,6 +81,7 @@ export default function LandingPage() {
                     data: {
                         full_name: name,
                         location: locationToSend,
+                        role: role || 'Unknown',
                     },
                     // Redirect back to home so we can intercept the auth change and register them
                     emailRedirectTo: `${window.location.origin}/verify`
@@ -174,7 +181,7 @@ export default function LandingPage() {
                                 }`}
                         >
                             {status === 'magic_link_sent'
-                                ? '✨ Magic link sent! Please check your email inbox to verify and join.'
+                                ? <span>✨ Magic link sent! Check your inbox — <strong>don't forget to look in your Promotions tab</strong> if you don't see it.</span>
                                 : status}
                         </motion.div>
                     )}

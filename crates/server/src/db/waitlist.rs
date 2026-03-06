@@ -8,52 +8,52 @@ pub async fn create_waitlist_entry(
     email: &str,
     name: &str,
     location: Option<&str>,
+    role: Option<&str>,
 ) -> Result<u64> {
     let mut tx = db.begin().await?;
 
     // 1. Insert the user (or ignore if already exists)
     let _ = sqlx::query(
         r#"
-        INSERT INTO waitlist (id, email, name, location, created_at)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (email) DO NOTHING
+        INSERT INTO waitlist (id, email, name, location, role, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (email) DO UPDATE SET
+            role = CASE WHEN waitlist.role IS NULL THEN EXCLUDED.role ELSE waitlist.role END,
+            name = CASE WHEN waitlist.name IS NULL THEN EXCLUDED.name ELSE waitlist.name END
         "#,
     )
     .bind(uuid::Uuid::new_v4().to_string())
     .bind(email.to_lowercase())
     .bind(name)
     .bind(location)
+    .bind(role)
     .bind(Utc::now())
     .execute(&mut *tx)
     .await?;
 
-    // 2. Get the created_at of this specific user
-    let user_created_at: chrono::DateTime<Utc> = sqlx::query_scalar(
-        r#"SELECT created_at FROM waitlist WHERE email = $1"#,
+    // 2. Get this user's rank using ROW_NUMBER() which gives a guaranteed unique sequential rank
+    let rank: i64 = sqlx::query_scalar(
+        r#"
+        SELECT row_num FROM (
+            SELECT email, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) as row_num
+            FROM waitlist
+        ) ranked
+        WHERE email = $1
+        "#,
     )
     .bind(email.to_lowercase())
     .fetch_one(&mut *tx)
     .await?;
 
-    // 3. Calculate rank (how many users joined before this user)
-    let count_before: i64 = sqlx::query_scalar(
-        r#"SELECT COUNT(*) FROM waitlist WHERE created_at < $1"#,
-    )
-    .bind(user_created_at)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    let rank = (count_before + 1) as u64;
-
     tx.commit().await?;
 
-    Ok(rank)
+    Ok(rank as u64)
 }
 
 pub async fn get_all_waitlist_entries(db: &PgPool) -> Result<Vec<WaitlistEntry>> {
     let rows = sqlx::query(
         r#"
-        SELECT id, email, name, location, created_at
+        SELECT id, email, name, location, role, created_at
         FROM waitlist
         ORDER BY created_at DESC
         "#,
@@ -68,6 +68,7 @@ pub async fn get_all_waitlist_entries(db: &PgPool) -> Result<Vec<WaitlistEntry>>
             email: row.get("email"),
             name: row.get("name"),
             location: row.get("location"),
+            role: row.get("role"),
             created_at: row.get("created_at"),
         })
         .collect();

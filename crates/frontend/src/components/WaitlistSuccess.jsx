@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
-import { Check, Loader2, Command, Share2, Download } from 'lucide-react';
+import { Check, Loader2, Download } from 'lucide-react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 // --- Role-Specific SVGs & Themes ---
 const ShapeFounder = () => (
@@ -89,10 +90,8 @@ const InteractiveStamp = ({ name, roleId, customRole, number, date }) => {
     const activeRole = ROLES[roleId] || ROLES.founder;
     const displayNumber = number.toString().padStart(3, '0');
 
-    // Determine display title
-    const displayTitle = roleId === 'destiny'
-        ? (customRole || 'DESTINY CALLS')
-        : activeRole.label;
+    // Determine display title — always show customRole if provided
+    const displayTitle = customRole || activeRole.label;
 
     const ShapeComponent = activeRole.shape;
 
@@ -168,7 +167,7 @@ const InteractiveStamp = ({ name, roleId, customRole, number, date }) => {
                 />
 
                 {/* Inner Card (Solid, protects text from mask) */}
-                <div className="absolute inset-[10px] overflow-hidden rounded-md bg-[#FAFAFA] shadow-[inset_0_0_20px_rgba(0,0,0,0.03)]">
+                <div id="waitlist-card-export" className="absolute inset-[10px] overflow-hidden rounded-md bg-[#FAFAFA] shadow-[inset_0_0_20px_rgba(0,0,0,0.03)]">
 
                     {/* Colorful Role Shape Background */}
                     <ShapeComponent />
@@ -194,7 +193,7 @@ const InteractiveStamp = ({ name, roleId, customRole, number, date }) => {
                                     {date}
                                 </span>
                                 <span className="font-mono text-[10px] tracking-[0.2em] font-bold text-gray-900">
-                                    LATENTS
+                                    LATENTS.IN
                                 </span>
                             </div>
                             <Command size={18} className="text-gray-800 drop-shadow-md" />
@@ -234,8 +233,13 @@ const InteractiveStamp = ({ name, roleId, customRole, number, date }) => {
                             </div>
 
                             {/* Number Indicator */}
-                            <div className="font-mono text-2xl font-bold tracking-tighter text-gray-900 drop-shadow-md">
-                                1<span className="text-sm relative -top-2 left-0.5">st</span>
+                            <div className="flex flex-col items-end text-right">
+                                <span className="font-mono text-[9px] tracking-[0.15em] text-gray-500 uppercase font-bold">
+                                    Waitlist Rank
+                                </span>
+                                <div className="font-mono text-2xl font-black tracking-tighter text-gray-900 drop-shadow-md leading-tight">
+                                    #{displayNumber}
+                                </div>
                             </div>
                         </div>
 
@@ -266,6 +270,17 @@ export default function WaitlistSuccess() {
                 const user = session.user;
                 const metadata = user.user_metadata || {};
 
+                // Read role/name from localStorage (saved before magic link was sent)
+                // This is more reliable than metadata for existing Supabase users
+                const pendingRole = localStorage.getItem('latents_pending_role');
+                const pendingName = localStorage.getItem('latents_pending_name');
+                // Clean up localStorage after reading
+                localStorage.removeItem('latents_pending_role');
+                localStorage.removeItem('latents_pending_name');
+
+                const resolvedRole = pendingRole || metadata.role || null;
+                const resolvedName = pendingName || metadata.full_name || 'Early Adopter';
+
                 setStatus('registering');
 
                 // 2. Register user to our Rust backend to get their Rank
@@ -277,8 +292,9 @@ export default function WaitlistSuccess() {
                     },
                     body: JSON.stringify({
                         email: user.email,
-                        name: metadata.full_name || 'Anonymous',
-                        location: metadata.location || 'Unknown'
+                        name: resolvedName,
+                        location: metadata.location || 'Unknown',
+                        role: resolvedRole,
                     }),
                 });
 
@@ -294,8 +310,9 @@ export default function WaitlistSuccess() {
 
                 // 3. Set standard user data for the visual card
                 setUserData({
-                    name: metadata.full_name || 'Early Adopter',
-                    rank: data.rank || 'TBD' // Assuming backend starts returning 'rank'
+                    name: resolvedName,
+                    rank: data.rank || 1,
+                    role: resolvedRole || data.role || null,
                 });
 
                 setStatus('success');
@@ -384,73 +401,83 @@ export default function WaitlistSuccess() {
                                 <div className="mx-auto w-16 h-16 bg-green-100/80 rounded-full flex items-center justify-center mb-4">
                                     <Check className="w-8 h-8 text-green-600" />
                                 </div>
-                                <h1 className="text-3xl font-bold text-gray-900 mb-2">You're on the list!</h1>
-                                <p className="text-gray-500">Your spot has been secured successfully.</p>
+                                <h1
+                                    className="text-3xl font-bold mb-3"
+                                    style={{
+                                        background: 'linear-gradient(135deg, #059669, #10b981, #34d399)',
+                                        WebkitBackgroundClip: 'text',
+                                        WebkitTextFillColor: 'transparent',
+                                        backgroundClip: 'text'
+                                    }}
+                                >
+                                    Congratulations<span style={{ WebkitTextFillColor: '#F59E0B', color: '#F59E0B' }}>✨</span>
+                                </h1>
+                                <p className="text-gray-700 font-medium text-[15px] leading-relaxed max-w-xs mx-auto">
+                                    You'll be among the first{' '}
+                                    <strong className="font-black text-gray-900">1,000</strong>{' '}
+                                    <span className="font-semibold tracking-wide">PEOPLE</span>{' '}to receive a{' '}
+                                    <strong className="font-black uppercase text-gray-900">Free Month</strong>{' '}of access.
+                                </p>
                             </div>
 
                             {/* Interactive Waitlist Card */}
                             <div className="flex flex-col items-center justify-center w-full mt-4">
                                 <InteractiveStamp
                                     name={userData.name}
-                                    roleId="destiny" // Using destiny as default to show the coolest version
-                                    customRole="LATENT"
+                                    roleId={(() => {
+                                        const r = (userData.role || '').toLowerCase();
+                                        if (r === 'founder') return 'founder';
+                                        if (r === 'student') return 'student';
+                                        if (r === 'artist') return 'artist';
+                                        return 'destiny';
+                                    })()}
+                                    customRole={(userData.role || 'FIRST MOVER').toUpperCase()}
                                     number={userData.rank}
                                     date={new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}
                                 />
 
-                                <div className="flex flex-col sm:flex-row gap-3 mt-6 w-full max-w-[340px]">
+                                {/* Confetti animation on success */}
+                                <div className="pointer-events-none fixed inset-0 z-50" aria-hidden>
+                                    <DotLottieReact
+                                        src="https://lottie.host/b28550e9-dcdb-4ee8-a17d-65fedf2c4864/nAQ6bL4EgY.lottie"
+                                        autoplay
+                                        loop={false}
+                                        style={{ width: '100%', height: '100%' }}
+                                    />
+                                </div>
+
+                                <div className="flex gap-3 mt-6 w-full max-w-[340px] justify-center">
                                     <button
                                         onClick={async () => {
                                             const element = document.getElementById('waitlist-card-export');
                                             if (!element) return;
                                             try {
-                                                const html2canvas = (await import('html2canvas')).default;
-                                                const canvas = await html2canvas(element, { backgroundColor: null, scale: 2 });
-                                                canvas.toBlob(async (blob) => {
-                                                    const text = `I just joined the Latents waitlist at rank #${userData.rank}! Reserved my spot as a First Mover. Secure yours at latents.in`;
-                                                    const filesArray = [new File([blob], 'latents-stamp.png', { type: blob.type, lastModified: new Date().getTime() })];
-
-                                                    if (navigator.share && navigator.canShare({ files: filesArray })) {
-                                                        await navigator.share({
-                                                            title: 'Latents Waitlist',
-                                                            text: text,
-                                                            files: filesArray
-                                                        });
-                                                    } else {
-                                                        // Fallback to copy link if native share isn't supported (e.g. desktop)
-                                                        await navigator.clipboard.writeText(text);
-                                                        alert("Text copied to clipboard! (Your browser doesn't support direct image sharing)");
+                                                const domtoimage = (await import('dom-to-image-more')).default;
+                                                const dataUrl = await domtoimage.toPng(element, {
+                                                    quality: 1,
+                                                    scale: 4,
+                                                    bgcolor: '#FAFAFA',
+                                                    width: element.offsetWidth,
+                                                    height: element.offsetHeight,
+                                                    style: {
+                                                        transform: 'none',
+                                                        borderRadius: '6px',
+                                                        overflow: 'hidden',
                                                     }
                                                 });
+                                                const link = document.createElement('a');
+                                                link.download = `latents-stamp-${userData.rank}.png`;
+                                                link.href = dataUrl;
+                                                link.click();
                                             } catch (err) {
-                                                console.error('Failed to share', err);
+                                                console.error('Failed to download', err);
+                                                alert('Download failed. Please try again.');
                                             }
                                         }}
                                         className="flex-1 flex items-center justify-center space-x-2 py-3 px-6 rounded-xl text-sm font-semibold bg-gray-900 text-white hover:bg-black transition-all shadow-lg"
                                     >
-                                        <Share2 size={16} />
-                                        <span>Share Stamp</span>
-                                    </button>
-
-                                    <button
-                                        onClick={async () => {
-                                            const element = document.getElementById('waitlist-card-export');
-                                            if (!element) return;
-                                            try {
-                                                const html2canvas = (await import('html2canvas')).default;
-                                                const canvas = await html2canvas(element, { backgroundColor: null, scale: 3 });
-                                                const link = document.createElement('a');
-                                                link.download = `latents-stamp-${userData.rank}.png`;
-                                                link.href = canvas.toDataURL('image/png');
-                                                link.click();
-                                            } catch (err) {
-                                                console.error('Failed to download', err);
-                                            }
-                                        }}
-                                        className="flex-1 flex items-center justify-center space-x-2 py-3 px-6 rounded-xl text-sm font-semibold bg-white text-gray-900 border border-gray-200 hover:bg-gray-50 transition-colors shadow-sm"
-                                    >
                                         <Download size={16} />
-                                        <span>Download</span>
+                                        <span>Download Stamp</span>
                                     </button>
                                 </div>
                             </div>
